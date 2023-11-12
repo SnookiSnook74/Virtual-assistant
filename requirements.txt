@@ -1,0 +1,12 @@
+pip install python-telegram-bot
+python3 -m pip install python-telegram-bot==13.15 -U
+# Или для асинхронной версии с зависимостями
+python3 -m pip install python-telegram-bot[all] -U
+# Для установки необязательных зависимостей
+python3 -m pip install python-telegram-bot[ext] -U
+pip install openai
+pip install pydub  
+sudo apt install ffmpeg
+#Также необходимо установить в перменную окружения API GPT
+export OPENAI_API_KEY='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'
+nohup python3 telegramBot.py &
