@@ -12,4 +12,5 @@ export OPENAI_API_KEY='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'
 nohup python3 telegramBot.py &
 
 
-#/deletecontext - Удаление контекста
+#/delete_context - Удаление контекста
+#/change_assistant - Удаление контекста

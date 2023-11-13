@@ -6,29 +6,74 @@ import openai
 from openai import OpenAI
 from pydub import AudioSegment
 from telegram import ChatAction
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CallbackQueryHandler
 
 import time
 import os
 
-# Токен вашего бота, полученный от BotFather
+assistants = {
+    "Персональный Ассистент": "asst_UOX6CjnhKf24xdLAI3B94iMY",
+    "Учитель Английского": "asst_eLBvtpsZEOqhdmmmlP8ltdkW",
+}
+# Глобальный словарь для хранения текущего ID ассистента каждого пользователя
+user_assistants = {}
+ # Глобальный словарь для хранения потоков
+user_threads = {} 
+# Токен вашего бота
 TOKEN = '1234066681:AAFchJJx9RxHxWeYSGYvt646o3Bab1b8O9s'
-
 # Инициализация клиента OpenAI
 client = OpenAI()
-# ID вашего существующего ассистента
-assistant_id = "asst_eLBvtpsZEOqhdmmmlP8ltdkW"
-# Получение существующего ассистента
-assistant = client.beta.assistants.retrieve(assistant_id=assistant_id)
-# Создание нового потока для каждого диалога
-thread = client.beta.threads.create()
-
 # Создаем экземпляр бота и диспетчера
 bot = Bot(token=TOKEN)
-updater = Updater(token=TOKEN, use_context=True)
-dispatcher = updater.dispatcher
+
+# Функция для изменения ассистента
+def change_assistant(update, context):
+    chat_id = update.message.chat_id
+    current_assistant = user_assistants.get(chat_id)
+    # Отправка сообщения с выбором ассистентов
+    buttons = [[InlineKeyboardButton(text=name + (" ✅" if assistants[name] == current_assistant else ""), callback_data=name)] for name in assistants.keys()]
+    reply_markup = InlineKeyboardMarkup(buttons)
+    update.message.reply_text('Выберите ассистента:', reply_markup=reply_markup)
+
+    
+# Обработчик колбэков от кнопок
+def button(update, context):
+    query = update.callback_query
+    query.answer()
+    chat_id = query.message.chat_id
+    selected_assistant = query.data
+    if selected_assistant in assistants:
+        # Устанавливаем нового ассистента и обновляем клавиатуру, чтобы отобразить выбор
+        user_assistants[chat_id] = assistants[selected_assistant]
+        # Сбрасываем поток (и, следовательно, контекст)
+        if chat_id in user_threads:
+            del user_threads[chat_id]
+        # Создаем клавиатуру с галочкой на выбранном ассистенте
+        buttons = [[InlineKeyboardButton(text=name + (" ✅" if assistants[name] == user_assistants[chat_id] else ""), callback_data=name)] for name in assistants.keys()]
+        reply_markup = InlineKeyboardMarkup(buttons)
+        # Отправляем подтверждение пользователю с обновленной клавиатурой
+        query.edit_message_text(text='Выберите ассистента:', reply_markup=reply_markup)
+    else:
+        query.edit_message_text(text="Ошибка: неверный выбор ассистента.")
+
+
+# Создание потока для каждого пользователя
+def get_user_thread(chat_id):
+    # Убедитесь, что для каждого пользователя существует поток
+    if chat_id not in user_threads:
+        user_threads[chat_id] = client.beta.threads.create()
+    return user_threads[chat_id]
+
+# Возвращает ID ассистента для пользователя, или использует ассистента по умолчанию
+def get_user_assistant_id(chat_id):
+    return user_assistants.get(chat_id, "asst_UOX6CjnhKf24xdLAI3B94iMY")
 
 # Функция обработки текстовых сообщений
 def handle_text(update, context):
+    chat_id = update.message.chat_id
+    thread = get_user_thread(chat_id)
+    assistant_id = get_user_assistant_id(chat_id)
     # Получение и обработка текстового сообщения
     received_text = update.message.text
     message = client.beta.threads.messages.create(
@@ -56,15 +101,18 @@ def handle_text(update, context):
     if messages.data:
         # Получение текста последнего сообщения от OpenAI
         response_text = messages.data[0].content[0].text.value
+        # Отправка сообщения обратно пользователю в Telegram
         if messages.data[0].role == "assistant":
             context.bot.send_message(chat_id=update.effective_chat.id, text=response_text)
     else:
         # Отправка сообщения об ошибке, если ответ отсутствует
         context.bot.send_message(chat_id=update.effective_chat.id, text="Извините, не смог обработать ваш запрос.")
 
-
 # Функция обработки голосовых сообщений
 def handle_voice(update, context):
+    chat_id = update.message.chat_id
+    thread = get_user_thread(chat_id)
+    assistant_id = get_user_assistant_id(chat_id)
     context.bot.send_message(chat_id=update.effective_chat.id, text="Получил ваше голосовое сообщение, готовлю ответ...")
     # Получение голосового сообщения
     voice_file = update.message.voice.get_file()
@@ -101,11 +149,9 @@ def handle_voice(update, context):
         if run_status.status == 'completed':
             break
         time.sleep(2)
-
         # Получение и вывод последнего сообщения ассистента
     messages = client.beta.threads.messages.list(thread_id=thread.id)
     assistant_reply = messages.data[0].content[0].text.value
-    print(assistant_reply)
         # Создание аудио речи с помощью API
     answer = client.audio.speech.create(
         model="tts-1",
@@ -119,10 +165,43 @@ def handle_voice(update, context):
     with open(response_file_path, 'rb') as audio_file:
         context.bot.send_audio(chat_id=update.effective_chat.id, audio=audio_file)
 
-    
-# Добавляем обработчики для текстовых и голосовых сообщений
-dispatcher.add_handler(MessageHandler(Filters.text & (~Filters.command), handle_text))
-dispatcher.add_handler(MessageHandler(Filters.voice, handle_voice))
+# Удалить контекст
+def delete_context(update, context):
+    chat_id = update.message.chat_id
+    if chat_id in user_threads:
+        # Удаляем существующий поток
+        del user_threads[chat_id]
+    update.message.reply_text("Ваш контекст был сброшен.")
 
-# Начинаем поиск обновлений
-updater.start_polling()
+
+def start(update, context):
+    start_message = (
+        "👋 Привет! Я твой персональный ассистент бот. Вот что я умею: \n"
+        "🔹 Помогаю управлять задачами и напоминаниями. 📅\n"
+        "🔹 Отвечаю на вопросы различной сложности. 💡\n"
+        "🔹 Поддерживаю беседу на разные темы. 🗣️\n"
+        "🔹 Обучаю английскому языку с помощью второго ассистента. 🇬🇧\n"
+        "🔄 Чтобы изменить ассистента, используй команду /change_assistant.\n"
+        "🗑️ Если ты хочешь сбросить контекст разговора, используй /delete_context.\n"
+        "🚀 Давай начнем!"
+    )
+    update.message.reply_text(start_message)
+
+
+def main():
+    updater = Updater(token=TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
+
+    # Добавляем обработчики для текстовых и голосовых сообщений
+    dispatcher.add_handler(MessageHandler(Filters.text & (~Filters.command), handle_text))
+    dispatcher.add_handler(MessageHandler(Filters.voice, handle_voice))
+    dispatcher.add_handler(CommandHandler("delete_context", delete_context))
+    dispatcher.add_handler(CommandHandler("change_assistant", change_assistant))
+    dispatcher.add_handler(CallbackQueryHandler(button))
+    dispatcher.add_handler(CommandHandler("start", start))
+
+    # Начинаем поиск обновлений
+    updater.start_polling()
+
+if __name__ == '__main__':
+    main()

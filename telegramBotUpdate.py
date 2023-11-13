@@ -12,30 +12,62 @@ from telegram.ext import CallbackQueryHandler
 import time
 import os
 
+assistants = {
+    "Персональный помощник": "asst_UOX6CjnhKf24xdLAI3B94iMY",
+    "Учитель Английского": "asst_eLBvtpsZEOqhdmmmlP8ltdkW",
+}
+# Глобальный словарь для хранения текущего ID ассистента каждого пользователя
+user_assistants = {}
 user_threads = {}  # Глобальный словарь для хранения потоков
 # Токен вашего бота, полученный от BotFather
-TOKEN = '6141524238:AAGDSYnXf-UKWX1-rdbo-Yjcf9W8uI7dVeE'
+TOKEN = '6745988720:AAEq-ECsnowt98ptt5wTvFiPpOou9qhdpo4'
 # Инициализация клиента OpenAI
 client = OpenAI()
-# ID вашего существующего ассистента
-assistant_id = "asst_UOX6CjnhKf24xdLAI3B94iMY"
-# Получение существующего ассистента
-assistant = client.beta.assistants.retrieve(assistant_id=assistant_id)
-# Создание нового потока для каждого диалога
-thread = client.beta.threads.create()
 # Создаем экземпляр бота и диспетчера
 bot = Bot(token=TOKEN)
 
+# Функция для изменения ассистента
+def change_assistant(update, context):
+    chat_id = update.message.chat_id
+    # Отправка сообщения с выбором ассистентов
+    buttons = [[InlineKeyboardButton(text=name, callback_data=name)] for name in assistants.keys()]
+    reply_markup = InlineKeyboardMarkup(buttons)
+    update.message.reply_text('Выберите ассистента:', reply_markup=reply_markup)
+    
+
+# Обработчик колбэков от кнопок
+def button(update, context):
+    query = update.callback_query
+    query.answer()
+    chat_id = query.message.chat_id
+    selected_assistant = query.data
+    if selected_assistant in assistants:
+        # Устанавливаем нового ассистента
+        user_assistants[chat_id] = assistants[selected_assistant]
+        # Сбрасываем поток (и, следовательно, контекст)
+        if chat_id in user_threads:
+            del user_threads[chat_id]
+        # Отправляем подтверждение пользователю
+        query.edit_message_text(text=f"Выбран ассистент: {selected_assistant}")
+    else:
+        query.edit_message_text(text="Ошибка: неверный выбор ассистента.")
+
+
 def get_user_thread(chat_id):
+    # Убедитесь, что для каждого пользователя существует поток
     if chat_id not in user_threads:
-        # Создаем новый поток, если он еще не существует
         user_threads[chat_id] = client.beta.threads.create()
     return user_threads[chat_id]
+
+def get_user_assistant_id(chat_id):
+    # Возвращает ID ассистента для пользователя, или использует ассистента по умолчанию
+    return user_assistants.get(chat_id, "asst_UOX6CjnhKf24xdLAI3B94iMY")
 
 # Функция обработки текстовых сообщений
 def handle_text(update, context):
     chat_id = update.message.chat_id
     thread = get_user_thread(chat_id)
+    assistant_id = get_user_assistant_id(chat_id)
     # Получение и обработка текстового сообщения
     received_text = update.message.text
     message = client.beta.threads.messages.create(
@@ -69,10 +101,12 @@ def handle_text(update, context):
     else:
         # Отправка сообщения об ошибке, если ответ отсутствует
         context.bot.send_message(chat_id=update.effective_chat.id, text="Извините, не смог обработать ваш запрос.")
+
 # Функция обработки голосовых сообщений
 def handle_voice(update, context):
     chat_id = update.message.chat_id
     thread = get_user_thread(chat_id)
+    assistant_id = get_user_assistant_id(chat_id)
     context.bot.send_message(chat_id=update.effective_chat.id, text="Получил ваше голосовое сообщение, готовлю ответ...")
     # Получение голосового сообщения
     voice_file = update.message.voice.get_file()
@@ -139,7 +173,9 @@ def main():
     # Добавляем обработчики для текстовых и голосовых сообщений
     dispatcher.add_handler(MessageHandler(Filters.text & (~Filters.command), handle_text))
     dispatcher.add_handler(MessageHandler(Filters.voice, handle_voice))
-    dispatcher.add_handler(CommandHandler("deletecontext", delete_context))
+    dispatcher.add_handler(CommandHandler("delete_context", delete_context))
+    dispatcher.add_handler(CommandHandler("change_assistant", change_assistant))
+    dispatcher.add_handler(CallbackQueryHandler(button))
 
     # Начинаем поиск обновлений
     updater.start_polling()
