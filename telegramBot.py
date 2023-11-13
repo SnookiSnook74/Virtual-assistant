@@ -8,6 +8,8 @@ from pydub import AudioSegment
 from telegram import ChatAction
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackQueryHandler
+import base64
+import requests
 
 import time
 import os
@@ -165,6 +167,50 @@ def handle_voice(update, context):
     with open(response_file_path, 'rb') as audio_file:
         context.bot.send_audio(chat_id=update.effective_chat.id, audio=audio_file)
 
+# Функция для загрузки изображения на Imgbb и получения URL
+def upload_image_to_imgbb(image_path, api_key):
+    with open(image_path, "rb") as image_file:
+        encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+        response = requests.post(
+            "https://api.imgbb.com/1/upload",
+            data={
+                "key": api_key,
+                "image": encoded_image,
+            }
+        )
+    response_json = response.json()
+    return response_json['data']['url']
+
+# Обработчик изображений
+def handle_photo(update, context):
+    chat_id = update.message.chat_id
+    photo_file = update.message.photo[-1].get_file()
+    local_image_path = f"{chat_id}_image.jpg"
+    photo_file.download(local_image_path)
+    
+    # Загрузка изображения на Imgbb и получение URL
+    imgbb_api_key = "af108b41e9bf6ed74a72b37e4eadf883"
+    image_url = upload_image_to_imgbb(local_image_path, imgbb_api_key)
+
+    # Отправка URL в OpenAI и получение ответа
+    response = client.chat.completions.create(
+        model="gpt-4-vision-preview",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Что на фото?"},
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ],
+            }
+        ],
+        max_tokens=300,
+    )
+    # Отправка ответа пользователю в чат
+    response_text = response.choices[0].message.content
+    context.bot.send_message(chat_id=chat_id, text=response_text)
+
+
 # Удалить контекст
 def delete_context(update, context):
     chat_id = update.message.chat_id
@@ -195,6 +241,7 @@ def main():
     # Добавляем обработчики для текстовых и голосовых сообщений
     dispatcher.add_handler(MessageHandler(Filters.text & (~Filters.command), handle_text))
     dispatcher.add_handler(MessageHandler(Filters.voice, handle_voice))
+    dispatcher.add_handler(MessageHandler(Filters.photo, handle_photo))
     dispatcher.add_handler(CommandHandler("delete_context", delete_context))
     dispatcher.add_handler(CommandHandler("change_assistant", change_assistant))
     dispatcher.add_handler(CallbackQueryHandler(button))
