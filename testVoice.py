@@ -9,7 +9,7 @@ import time
 client = openai.OpenAI()
 
 # ID вашего существующего ассистента
-assistant_id = "asst_eLBvtpsZEOqhdmmmlP8ltdkW"
+assistant_id = "asst_UOX6CjnhKf24xdLAI3B94iMY"
 
 # Получение существующего ассистента
 assistant = client.beta.assistants.retrieve(assistant_id=assistant_id)

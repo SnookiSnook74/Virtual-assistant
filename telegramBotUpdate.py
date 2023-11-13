@@ -6,29 +6,36 @@ import openai
 from openai import OpenAI
 from pydub import AudioSegment
 from telegram import ChatAction
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CallbackQueryHandler
 
 import time
 import os
 
+user_threads = {}  # Глобальный словарь для хранения потоков
 # Токен вашего бота, полученный от BotFather
-TOKEN = '1234066681:AAFchJJx9RxHxWeYSGYvt646o3Bab1b8O9s'
-
+TOKEN = '6141524238:AAGDSYnXf-UKWX1-rdbo-Yjcf9W8uI7dVeE'
 # Инициализация клиента OpenAI
 client = OpenAI()
 # ID вашего существующего ассистента
-assistant_id = "asst_eLBvtpsZEOqhdmmmlP8ltdkW"
+assistant_id = "asst_UOX6CjnhKf24xdLAI3B94iMY"
 # Получение существующего ассистента
 assistant = client.beta.assistants.retrieve(assistant_id=assistant_id)
 # Создание нового потока для каждого диалога
 thread = client.beta.threads.create()
-
 # Создаем экземпляр бота и диспетчера
 bot = Bot(token=TOKEN)
-updater = Updater(token=TOKEN, use_context=True)
-dispatcher = updater.dispatcher
+
+def get_user_thread(chat_id):
+    if chat_id not in user_threads:
+        # Создаем новый поток, если он еще не существует
+        user_threads[chat_id] = client.beta.threads.create()
+    return user_threads[chat_id]
 
 # Функция обработки текстовых сообщений
 def handle_text(update, context):
+    chat_id = update.message.chat_id
+    thread = get_user_thread(chat_id)
     # Получение и обработка текстового сообщения
     received_text = update.message.text
     message = client.beta.threads.messages.create(
@@ -56,15 +63,16 @@ def handle_text(update, context):
     if messages.data:
         # Получение текста последнего сообщения от OpenAI
         response_text = messages.data[0].content[0].text.value
+        # Отправка сообщения обратно пользователю в Telegram
         if messages.data[0].role == "assistant":
             context.bot.send_message(chat_id=update.effective_chat.id, text=response_text)
     else:
         # Отправка сообщения об ошибке, если ответ отсутствует
         context.bot.send_message(chat_id=update.effective_chat.id, text="Извините, не смог обработать ваш запрос.")
-
-
 # Функция обработки голосовых сообщений
 def handle_voice(update, context):
+    chat_id = update.message.chat_id
+    thread = get_user_thread(chat_id)
     context.bot.send_message(chat_id=update.effective_chat.id, text="Получил ваше голосовое сообщение, готовлю ответ...")
     # Получение голосового сообщения
     voice_file = update.message.voice.get_file()
@@ -101,11 +109,9 @@ def handle_voice(update, context):
         if run_status.status == 'completed':
             break
         time.sleep(2)
-
         # Получение и вывод последнего сообщения ассистента
     messages = client.beta.threads.messages.list(thread_id=thread.id)
     assistant_reply = messages.data[0].content[0].text.value
-    print(assistant_reply)
         # Создание аудио речи с помощью API
     answer = client.audio.speech.create(
         model="tts-1",
@@ -118,11 +124,25 @@ def handle_voice(update, context):
     # Отправка аудиофайла обратно в чат
     with open(response_file_path, 'rb') as audio_file:
         context.bot.send_audio(chat_id=update.effective_chat.id, audio=audio_file)
-
+# Удалить контекст
+def delete_context(update, context):
+    chat_id = update.message.chat_id
+    if chat_id in user_threads:
+        # Удаляем существующий поток
+        del user_threads[chat_id]
+    update.message.reply_text("Ваш контекст был сброшен.")
     
-# Добавляем обработчики для текстовых и голосовых сообщений
-dispatcher.add_handler(MessageHandler(Filters.text & (~Filters.command), handle_text))
-dispatcher.add_handler(MessageHandler(Filters.voice, handle_voice))
+def main():
+    updater = Updater(token=TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
 
-# Начинаем поиск обновлений
-updater.start_polling()
+    # Добавляем обработчики для текстовых и голосовых сообщений
+    dispatcher.add_handler(MessageHandler(Filters.text & (~Filters.command), handle_text))
+    dispatcher.add_handler(MessageHandler(Filters.voice, handle_voice))
+    dispatcher.add_handler(CommandHandler("deletecontext", delete_context))
+
+    # Начинаем поиск обновлений
+    updater.start_polling()
+
+if __name__ == '__main__':
+    main()

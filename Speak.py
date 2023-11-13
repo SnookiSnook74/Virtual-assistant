@@ -69,6 +69,8 @@ while True:
         # Получение и вывод последнего сообщения ассистента
         messages = client.beta.threads.messages.list(thread_id=thread.id)
         assistant_reply = messages.data[0].content[0].text.value
+        print(assistant_reply)
+        # assistant
 
         # Создание аудио речи с помощью API
         answer = client.audio.speech.create(
