@@ -17,17 +17,46 @@ import os
 assistants = {
     "Персональный Ассистент": "asst_UOX6CjnhKf24xdLAI3B94iMY",
     "Учитель Английского": "asst_eLBvtpsZEOqhdmmmlP8ltdkW",
+    "Ассистент по программированию": "asst_TA9ey4rIYHGpcJQzjyhrSr7F"
+    
 }
 # Глобальный словарь для хранения текущего ID ассистента каждого пользователя
 user_assistants = {}
  # Глобальный словарь для хранения потоков
 user_threads = {} 
+# Словарь для хранения количества запросов каждого пользователя
+user_requests_count = {} 
+MY_TELEGRAM_ID = '319761502'
+# Список разрешенных User ID
+ALLOWED_USER_IDS = ['319761502', 'ID_2', 'ID_3']
+# Максимальное количество разрешенных запросов
+MAX_REQUESTS_PER_USER = 5
 # Токен вашего бота
 TOKEN = '1234066681:AAFchJJx9RxHxWeYSGYvt646o3Bab1b8O9s'
 # Инициализация клиента OpenAI
 client = OpenAI()
 # Создаем экземпляр бота и диспетчера
 bot = Bot(token=TOKEN)
+
+def is_user_allowed(update, context):
+    user_id = str(update.effective_user.id)
+    if user_id not in ALLOWED_USER_IDS:
+        update.message.reply_text("Извините, у вас нет доступа к этому боту.")
+        return False  # Пользователь не в списке разрешенных
+    return True  # Пользователь в списке разрешенных
+
+# Пока не используется(возможно при расширении бота буду вводить ограничения)
+def is_request_allowed(user_id):
+    # Проверяем, является ли пользователь владельцем бота
+    if user_id == MY_TELEGRAM_ID:
+        return True  # Владелец бота может делать неограниченное количество запросов
+    # Увеличиваем счётчик запросов или устанавливаем его в 1, если это первый запрос
+    user_requests_count[user_id] = user_requests_count.get(user_id, 0) + 1
+    # Проверяем, не превышено ли максимальное количество запросов
+    if user_requests_count[user_id] > MAX_REQUESTS_PER_USER:
+        return False  # Превышено максимальное количество запросов
+    return True  # Всё в порядке, запрос разрешен
+
 
 # Функция для изменения ассистента
 def change_assistant(update, context):
@@ -84,6 +113,8 @@ def generate_image(prompt):
 
 # Функция обработки текстовых сообщений
 def handle_text(update, context):
+    if not is_user_allowed(update, context):
+        return  # Прекращаем обработку, если пользователь не в списке разрешенных
     chat_id = update.message.chat_id
     # Получение и обработка текстового сообщения
     received_text = update.message.text.lower()
@@ -129,6 +160,8 @@ def handle_text(update, context):
 
 # Функция обработки голосовых сообщений
 def handle_voice(update, context):
+    if not is_user_allowed(update, context):
+        return  # Прекращаем обработку, если пользователь не в списке разрешенных
     chat_id = update.message.chat_id
     thread = get_user_thread(chat_id)
     assistant_id = get_user_assistant_id(chat_id)
@@ -137,7 +170,7 @@ def handle_voice(update, context):
     voice_file = update.message.voice.get_file()
     file_path = 'voice_message.ogg'
     voice_file.download(file_path)
-        # Конвертация Ogg в WAV
+    # Конвертация Ogg в WAV
     ogg_version = AudioSegment.from_file(file_path, format="ogg")
     wav_path = 'voice_message.wav'
     ogg_version.export(wav_path, format="wav")
@@ -200,6 +233,8 @@ def upload_image_to_imgbb(image_path, api_key):
 
 # Обработчик изображений
 def handle_photo(update, context):
+    if not is_user_allowed(update, context):
+        return  # Прекращаем обработку, если пользователь не в списке разрешенных
     chat_id = update.message.chat_id
     photo_file = update.message.photo[-1].get_file()
     local_image_path = f"{chat_id}_image.jpg"
@@ -216,7 +251,7 @@ def handle_photo(update, context):
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Что на фото?"},
+                    {"type": "text", "text": "Что на фото? Давай описание максимально подробно"},
                     {"type": "image_url", "image_url": image_url},
                 ],
             }
