@@ -32,7 +32,7 @@ ALLOWED_USER_IDS = ['319761502', 'ID_2', 'ID_3']
 # Максимальное количество разрешенных запросов
 MAX_REQUESTS_PER_USER = 5
 # Токен вашего бота
-TOKEN = '1234066681:AAFchJJx9RxHxWeYSGYvt646o3Bab1b8O9s'
+TOKEN = ''
 # Инициализация клиента OpenAI
 client = OpenAI()
 # Создаем экземпляр бота и диспетчера

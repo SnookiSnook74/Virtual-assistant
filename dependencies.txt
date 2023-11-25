@@ -8,8 +8,8 @@ pip install openai
 pip install pydub  
 sudo apt install ffmpeg
 #Также необходимо установить в перменную окружения API GPT
-export OPENAI_API_KEY='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'
-imgbb_api_key = "af108b41e9bf6ed74a72b37e4eadf883"
+export OPENAI_API_KEY=''
+imgbb_api_key = ""
 nohup python3 telegramBot.py &
 
 
