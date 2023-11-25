@@ -14,4 +14,4 @@ nohup python3 telegramBot.py &
 
 
 #/delete_context - Удаление контекста
-#/change_assistant - Удаление контекста
+#/change_assistant - Смена ассистента
